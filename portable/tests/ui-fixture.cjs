@@ -1,0 +1,3 @@
+// Explicit deterministic UI fixture. This is not model inference.
+const http=require('node:http');
+http.createServer((req,res)=>{res.setHeader('Content-Type','application/json');if(req.url==='/v1/models'){res.end(JSON.stringify({data:[{id:'release-ui-fixture'}]}));return;}if(req.url==='/v1/chat/completions'){res.end(JSON.stringify({choices:[{message:{role:'assistant',content:'Portable desktop pipeline verified. This is a deterministic test fixture, not an AI answer.'},finish_reason:'stop'}]}));return;}res.statusCode=404;res.end('{}');}).listen(9466,'127.0.0.1',()=>console.log('Release UI fixture on 127.0.0.1:9466'));

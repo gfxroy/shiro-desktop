@@ -1,0 +1,37 @@
+name: Portable build checks
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['portable/**', '.github/workflows/portable-builds.yml']
+permissions:
+  contents: read
+jobs:
+  portable:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: windows
+          - os: ubuntu-latest
+            target: linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: portable/package-lock.json
+      - run: npm ci
+        working-directory: portable
+      - run: npm test
+        working-directory: portable
+      - run: npm run package:${{ matrix.target }}
+        working-directory: portable
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Shiro-portable-${{ matrix.target }}-build-check
+          path: releases/portable/*
+          retention-days: 14

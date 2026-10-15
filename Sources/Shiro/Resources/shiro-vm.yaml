@@ -1,0 +1,35 @@
+# Local Linux VM using Apple's Virtualization framework. No host file mounts.
+minimumLimaVersion: 2.0.0
+vmType: vz
+cpus: 2
+memory: 3GiB
+disk: 16GiB
+mounts: []
+images:
+  - location: https://cloud.debian.org/images/cloud/trixie/20260712-2537/debian-13-genericcloud-arm64-20260712-2537.qcow2
+    arch: aarch64
+    digest: sha512:8543d795f2fde630eb66c492f245a8c1da19dedc636e0a8e7b3d0f95920e1a05aa911ef2d82d177d41cc53ced5fccbd2a3945d07fa5e15018914c4d864bb07ed
+  - location: https://cloud.debian.org/images/cloud/trixie/20260712-2537/debian-13-genericcloud-amd64-20260712-2537.qcow2
+    arch: x86_64
+    digest: sha512:7ae53e9dbee282bfc16f289dec483dde3a8598769c38a267948310f7a2a52c662620198603bc52c142627efba379863d16079698a10b34102d55bcedd40e8d32
+ssh:
+  loadDotSSHPubKeys: false
+  forwardAgent: false
+containerd:
+  system: false
+  user: false
+propagateProxyEnv: false
+portForwards:
+  - guestPortRange: [1, 65535]
+    proto: any
+    ignore: true
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eu
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update
+      apt-get install -y --no-install-recommends chromium chromium-sandbox xvfb xauth openbox xdotool scrot xclip xterm thunar dbus-x11 python3 python3-websocket python3-pil python3-reportlab python3-openpyxl python3-docx poppler-utils fonts-dejavu-core fonts-liberation curl ca-certificates
+      apt-get clean
+      rm -rf /var/lib/apt/lists/*
