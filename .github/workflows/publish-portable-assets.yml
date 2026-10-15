@@ -1,0 +1,41 @@
+name: Publish portable release assets
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v0.2.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: portable/package-lock.json
+      - run: npm ci
+        working-directory: portable
+      - run: npm run package:windows
+        working-directory: portable
+      - run: npm run package:linux
+        working-directory: portable
+      - name: Archive portable targets
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import shutil,tarfile,pathlib,hashlib
+          p=pathlib.Path('releases/portable');out=pathlib.Path('release-assets');out.mkdir()
+          shutil.make_archive(str(out/'Shiro-Portable-0.2.0-windows-x64'),'zip',p,'Shiro-Portable-win32-x64')
+          with tarfile.open(out/'Shiro-Portable-0.2.0-linux-x64.tar.gz','w:gz') as t:t.add(p/'Shiro-Portable-linux-x64',arcname='Shiro-Portable-linux-x64')
+          files=sorted(out.iterdir())
+          (out/'portable-checksums.txt').write_text(''.join(hashlib.file_digest(f.open('rb'),'sha256').hexdigest()+'  '+f.name+'\n' for f in files))
+          PY
+      - name: Upload to the existing draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release view v0.2.0 || gh release create v0.2.0 --draft --title 'Shiro 0.2.0 — Native Mac + portable previews' --verify-tag
+          gh release upload v0.2.0 release-assets/* --clobber
