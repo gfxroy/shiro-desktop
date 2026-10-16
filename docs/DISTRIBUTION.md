@@ -1,4 +1,4 @@
-# Shiro distribution: Mac 0.3.0, portable 0.2.0
+# Shiro distribution: Mac 0.3.1, portable 0.2.0
 
 ## Download choices
 
@@ -44,4 +44,4 @@ Unsigned/notarization warnings are expected. Verify checksums and source before 
 
 Run `python3 scripts/package_release.py` after producing the native app and both portable target directories. For a native-only update, use `--native-only` to keep the existing portable archives unchanged. It creates archives and SHA256SUMS.txt under releases/downloads. Source packaging uses an explicit file allowlist; it excludes conversations, profiles, model weights, credentials, research captures, app backups and local build caches. No personal runtime data is part of the public release.
 
-Native Mac 0.3.0 adds [shared memory and the completion harness](MEMORY-HARNESS.md). Portable previews remain 0.2.0 and do not include these native features.
+Native Mac 0.3.1 adds [shared memory and the completion harness](MEMORY-HARNESS.md). Portable previews remain 0.2.0 and do not include these native features.

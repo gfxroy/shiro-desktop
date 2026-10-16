@@ -65,6 +65,12 @@ public actor MemoryIndex {
     public func read(state: SavedState, botID: UUID, chatID: UUID, id: String, offset: Int) throws -> JSON {
         try Self.read(documents: Self.documents(state: state, botID: botID, chatID: chatID, cache: AttachmentCache()), id: id, offset: offset)
     }
+    public func candidateFacts(state: SavedState, botID: UUID, chatID: UUID, sourceIDs: [String]) -> [String] {
+        let ids = Set(sourceIDs)
+        return Self.documents(state: state, botID: botID, chatID: chatID, cache: AttachmentCache()).filter {
+            ["user", "attachment", "shared"].contains($0.kind) && (ids.contains($0.id) || ids.contains(Self.sourceID($0.id)))
+        }.map(\.text)
+    }
 
     public static func documents(state: SavedState, botID: UUID, chatID: UUID, cache: AttachmentCache? = nil) -> [MemoryDocument] {
         var docs = [MemoryDocument(id: "shared", source: "Shared user-editable facts", text: state.memory, kind: "shared")]

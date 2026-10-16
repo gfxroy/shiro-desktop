@@ -69,7 +69,7 @@ class Fixture(BaseHTTPRequestHandler):
             self.tool('files_read', {'path':self.server.folder+'/helio-cv.pdf','offset':0})
         elif n in (4,7):
             text='# Alex Example\n\nApplied AI Engineer — Helio Robotics\n\n# Skills\n\nPython, SQL, model evaluation.\n\n# Experience\n\nExample Labs, 2023–2025. Built Python APIs. Relevant to Python services and model evaluation in the target role.\n\n# Education\n\nBSc Computer Science, 2022.'
-            if n==4: text+='\n\nPhD in Artificial Intelligence, 2024.'
+            if n==4: text+='\n\nPhD in Artificial Intelligence.'
             self.tool('files_pdf',{'path':self.server.folder+'/helio-cv.pdf','content':text})
         else:
             self.reply('The tailored CV is ready.')
