@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 import urllib.parse
 import urllib.request
 
@@ -320,6 +321,18 @@ def document_text(path):
     return text
 
 
+def refresh_companion(path, content):
+    companion = path.with_name(path.name + ".txt")
+    encoded = content.encode("utf-8")
+    if companion.is_file() and not companion.is_symlink() and companion.stat().st_size == len(encoded) and companion.read_bytes() == encoded:
+        return
+    if companion.exists() or companion.is_symlink():
+        history = workspace_path(".shiro-document-history")
+        history.mkdir(exist_ok=True)
+        companion.rename(history / (uuid.uuid4().hex + "-" + companion.name))
+    companion.write_bytes(encoded)
+
+
 def files(args):
     action = required(args, "action")
     if action == "mkdir":
@@ -372,6 +385,7 @@ def files(args):
             clean = section.lstrip('# ').strip() if heading else section.strip()
             blocks.extend([Paragraph(escape(clean).replace('\n', '<br/>'), styles['Heading1'] if heading else styles['BodyText']), Spacer(1, 12)])
         SimpleDocTemplate(str(path), leftMargin=48, rightMargin=48, topMargin=48, bottomMargin=48).build(blocks)
+        refresh_companion(path, content)
         return {"saved": str(path.relative_to(WORKSPACE.resolve())), "bytes": path.stat().st_size, "format": "PDF"}
     if action == "docx":
         from docx import Document
@@ -389,6 +403,7 @@ def files(args):
             else:
                 document.add_paragraph(block)
         document.save(path)
+        refresh_companion(path, content)
         return {"saved": str(path.relative_to(WORKSPACE.resolve())), "bytes": path.stat().st_size, "format": "DOCX"}
     if action == "write":
         content = args.get("content")

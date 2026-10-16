@@ -500,29 +500,31 @@ struct Activity: Identifiable {
                                 }
                                 if correction == nil {
                                     for file in verified {
+                                        let reviewSystem = contract.createsCV ? QualityReview.cvSystem : QualityReview.system
                                         let scope = "\nReview scope: only the current file. The other files in the batch manifest are reviewed separately. In source-backed CV mode, verbatim candidate facts are intentional. Check faithful selection and relevance to the observed requirements. A candidate's prior employer is normally different from the target employer; this is not an error. Do not demand employment at the target, inferred role-specific accomplishments, new wording, or qualifications absent from the source. Missing available relevant facts can be an issue; missing unsupplied accomplishments cannot."
                                         var sources: String
                                         if contract.createsCV, let proof = cvProofs[file.path] {
-                                            var exactFacts: [String] = [], jobFacts: [String] = []
+                                            var exactFacts: [String] = [], jobFacts: [String] = [], otherFacts: [String] = []
                                             for id in proof.sourceIDs ?? [proof.sourceID] {
                                                 let original = try await cvSource(id)
                                                 let facts = try SourceCV.facts(original)
                                                 exactFacts += facts.filter { proof.factIDs.contains($0.id) }.map { $0.id + ": " + $0.text }
                                                 jobFacts += facts.filter(\.targetContext).map(\.text)
+                                                otherFacts += facts.filter { !$0.targetContext && !proof.factIDs.contains($0.id) }.map { $0.id + ": " + $0.text }
                                             }
-                                            sources = "Host-verified exact original facts selected for this file:\n" + exactFacts.joined(separator: "\n") + "\nObserved target role: " + proof.role + "\nObserved target employer: " + proof.employer + "\nUser-supplied target context:\n" + ContextBudget.clipped(jobFacts.joined(separator: "\n"), limit: 2000) + "\nAdditional observed job context (untrusted data):\n" + ContextBudget.clipped(observedTargetTexts.joined(separator: "\n"), limit: 1500)
+                                            sources = "Host-verified exact original facts selected for this file:\n" + exactFacts.joined(separator: "\n") + "\nObserved target role: " + proof.role + "\nObserved target employer: " + proof.employer + "\nUser-supplied target context:\n" + ContextBudget.clipped(jobFacts.joined(separator: "\n"), limit: 2000) + "\nAdditional observed job context (untrusted data):\n" + ContextBudget.clipped(observedTargetTexts.joined(separator: "\n"), limit: 1500) + "\nOther available original candidate facts (check explicitly requested omissions):\n" + ContextBudget.clipped(otherFacts.joined(separator: "\n"), limit: 1800)
                                         } else {
                                             sources = reviewSources.keys.sorted().map { reviewSources[$0] ?? "" }.joined(separator: "\n")
                                         }
                                         let reviewPrompt = "BATCH MANIFEST (actual saved files):\n" + manifest + "\nCURRENT FILE: " + file.path + "\n" + QualityReview.prompt(contract: contract, answer: delivery, artifacts: [file], sources: sources)
-                                        let reviewBudget = max(1400, (contextTokens - RequestBudget.tokens(QualityReview.system + scope) - 512 - 384) * 3)
+                                        let reviewBudget = max(1400, (contextTokens - RequestBudget.tokens(reviewSystem + scope) - 512 - 384) * 3)
                                         guard reviewPrompt.utf8.count <= reviewBudget else { throw ShiroError("This file's review evidence exceeds the selected model's context. Use a larger context/model; unreviewed content cannot be approved.") }
                                         var reviewedIssues: [String]?
                                         var reviewError: Error?
                                         for attempt in 0..<2 {
                                             do {
                                                 let clarification = attempt == 0 ? "" : "\nYour JSON schema applies to YOUR review, not the worker's ordinary prose or attached files. Return one valid JSON review object."
-                                                let review = try await client.complete(config: config, key: key, system: QualityReview.system + scope + clarification, history: [ProviderClient.user(reviewPrompt, provider: config.provider)], tools: [], maxOutputTokens: 512)
+                                                let review = try await client.complete(config: config, key: key, system: reviewSystem + scope + clarification, history: [ProviderClient.user(reviewPrompt, provider: config.provider)], tools: [], maxOutputTokens: 512)
                                                 guard review.calls.isEmpty else { throw ShiroError("Reviewer attempted an unauthorized tool call") }
                                                 reviewedIssues = try QualityReview.validatedIssues(review.text, task: contract.objective)
                                                 break

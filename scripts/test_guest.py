@@ -115,6 +115,18 @@ class FileBoundaryTests(unittest.TestCase):
             doc.writestr("word/document.xml", '<w:document xmlns:w="word"><w:t>Candidate facts</w:t></w:document>')
         self.assertEqual(guest.files({"action": "verify", "path": "cv.docx"})["text"], "Candidate facts")
 
+    def test_document_companion_refresh_preserves_prior_text(self):
+        path = guest.WORKSPACE / "cv.pdf"
+        companion = path.with_name(path.name + ".txt")
+        companion.write_text("Old incorrect 202")
+        guest.refresh_companion(path, "Original BSc, 2022")
+        self.assertEqual(companion.read_text(), "Original BSc, 2022")
+        backups = list((guest.WORKSPACE / ".shiro-document-history").iterdir())
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(backups[0].read_text(), "Old incorrect 202")
+        guest.refresh_companion(path, "Original BSc, 2022")
+        self.assertEqual(len(list(backups[0].parent.iterdir())), 1)
+
     def test_file_metadata_and_direct_input(self):
         guest.files({"action": "write", "path": "output.pdf", "content": "pdf test"})
         self.assertTrue(guest.files({"action": "stat", "path": "output.pdf"})["file"])

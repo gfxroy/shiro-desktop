@@ -26,7 +26,7 @@ def entry(role, text):
 def fixture_profile(path, model, endpoint, folder):
     manager, researcher = identifier(), identifier()
     source = entry('user', 'Synthetic candidate Alex Example. Skills: Python, SQL, model evaluation. Experience: built Python APIs at Example Labs during 2023–2025. Education: BSc Computer Science, 2022. Target employer Helio Robotics, Applied AI Engineer. Target job supplied by user: https://example.com/careers/42. Requirements: Python services and model evaluation. No doctorate or other qualifications supplied.')
-    request = f'Make a tailored CV for the specific Helio Robotics job from my saved candidate facts. Save it as {folder}/helio-cv.pdf. Use only supplied facts.'
+    request = f'Make a tailored CV for the specific Helio Robotics job from my saved candidate facts. Save it as {folder}/helio-cv.pdf. Use only supplied facts. Include my supplied education.'
     config = dict(provider='local', model=model, endpoint=endpoint, vision=False)
     chat = dict(id=identifier(), title='Harness fixture', botID=manager, entries=[entry('user', request)], wire=[dict(role='user', content='Older filler ' * 4000)], wireProvider='local:'+model+':'+endpoint, updated=time.time()-978307200, pendingTask=request, pendingConfig=config, activeObjective=request, lastRunOutcome='running')
     state = dict(conversations=[chat, dict(id=identifier(), title='Candidate and target supplied earlier', botID=researcher, entries=[source], wire=[], wireProvider='', updated=time.time()-978307200-3600)], bots=[dict(id=manager, name='Harness manager', instructions='', memory='', pinned=True), dict(id=researcher, name='Researcher', instructions='', memory='', pinned=False)], configs=[config], provider='local', memory='Use only confirmed candidate facts.', routines=[], vmName='shiro-local', askBeforeActions=True, maxSteps=24, projects=[], selectedChatID=chat['id'])
@@ -53,7 +53,12 @@ class Fixture(BaseHTTPRequestHandler):
             assert 'prior employer' in system, 'Reviewer must distinguish prior employment from the target'
             self.server.reviews+=1
             accepted=self.server.reviews>1
-            self.reply(json.dumps(dict(accepted=accepted,issues=[] if accepted else ['Prioritize the source-backed Python skills for this role. Keep candidate facts unchanged.'])))
+            if not accepted:
+                prompt=body['messages'][-1]['content']
+                actual=prompt.split('ACTUAL READ-BACK FILES:',1)[1].split('PROPOSED FINAL ANSWER:',1)[0]
+                assert 'BSc Computer Science' not in actual, 'Fixture must expose a real omitted education entry'
+                assert 'BSc Computer Science' in prompt.split('ACTUAL READ-BACK FILES:',1)[0], 'Reviewer needs the omitted original fact'
+            self.reply(json.dumps(dict(accepted=accepted,issues=[] if accepted else ['The user explicitly requested the supplied education, but the read-back CV omits BSc Computer Science, 2022. Add that original fact unchanged.'])))
             return
         self.server.worker+=1
         n=self.server.worker
@@ -88,6 +93,7 @@ class Fixture(BaseHTTPRequestHandler):
                             break
             sections=json.loads(json.dumps(self.server.fact_sections))
             if n==4:sections[1]['fact_ids']=['invented-PhD-claim']
+            if n==5:sections=[section for section in sections if section['heading']!='Education']
             is_second=self.server.scenario=='multi-cv' and n==7
             self.tool('cv_create',{'path':self.server.folder+('/nimbus-cv.pdf' if is_second else '/helio-cv.pdf'),'candidate_name':'Alex Example','target_role':'Applied AI Engineer','target_employer':'Nimbus Systems' if is_second else 'Helio Robotics','sections':sections})
         elif n==6:
@@ -110,7 +116,7 @@ def run(app, scenario, root, keep=False):
     if scenario=='multi-cv':
         saved=json.loads((profile/'state.json').read_text())
         chat=saved['conversations'][0]
-        request=f'Make 2 separate tailored CVs, one for each job: Applied AI Engineer at Helio Robotics and at Nimbus Systems. Save them as {server.folder}/helio-cv.pdf and {server.folder}/nimbus-cv.pdf. Use only supplied candidate facts.'
+        request=f'Make 2 separate tailored CVs, one for each job: Applied AI Engineer at Helio Robotics and at Nimbus Systems. Save them as {server.folder}/helio-cv.pdf and {server.folder}/nimbus-cv.pdf. Use only supplied candidate facts. Include my supplied education.'
         chat.update(pendingTask=request,activeObjective=request);chat['entries'][0]['text']=request
         saved['conversations'][1]['entries'][0]['text']+=' Target employer: Nimbus Systems. Target role: Applied AI Engineer.'
         (profile/'state.json').write_text(json.dumps(saved))
