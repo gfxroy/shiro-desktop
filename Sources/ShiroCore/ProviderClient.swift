@@ -67,14 +67,14 @@ public final class ProviderClient {
         switch config.provider {
         case .openAI:
             url = base.appendingPathComponent("responses")
-            body = .object(["model": .string(config.model), "instructions": .string(system), "input": .array(history), "tools": .array(schemas), "store": .bool(false), "include": .array([.string("reasoning.encrypted_content")]), "max_output_tokens": .number(8192)])
+            body = .object(["model": .string(config.model), "instructions": .string(system), "input": .array(history), "tools": .array(schemas), "store": .bool(false), "include": .array([.string("reasoning.encrypted_content")]), "max_output_tokens": .number(Double(maxOutputTokens ?? 8192))])
         case .claude:
             url = base.appendingPathComponent("messages")
-            body = .object(["model": .string(config.model), "system": .string(system), "messages": .array(Self.mergeClaude(history)), "tools": .array(schemas), "max_tokens": .number(8192)])
+            body = .object(["model": .string(config.model), "system": .string(system), "messages": .array(Self.mergeClaude(history)), "tools": .array(schemas), "max_tokens": .number(Double(maxOutputTokens ?? 8192))])
         case .gemini:
             guard config.model.range(of: #"^[a-zA-Z0-9._-]+$"#, options: .regularExpression) != nil else { throw ShiroError("Invalid Gemini model identifier.") }
             url = base.appendingPathComponent("models/\(config.model):generateContent")
-            body = .object(["systemInstruction": .object(["parts": .array([.object(["text": .string(system)])])]), "contents": .array(Self.mergeGemini(history)), "tools": .array([.object(["functionDeclarations": .array(schemas)])]), "generationConfig": .object(["maxOutputTokens": .number(8192)])])
+            body = .object(["systemInstruction": .object(["parts": .array([.object(["text": .string(system)])])]), "contents": .array(Self.mergeGemini(history)), "tools": .array([.object(["functionDeclarations": .array(schemas)])]), "generationConfig": .object(["maxOutputTokens": .number(Double(maxOutputTokens ?? 8192))])])
         case .local:
             guard !config.model.lowercased().contains("cloud") else { throw ShiroError("Choose a downloaded local model. Cloud-routed models are disabled in Shiro's Local provider.") }
             url = base.appendingPathComponent("chat/completions")

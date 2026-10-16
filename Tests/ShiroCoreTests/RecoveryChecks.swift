@@ -58,7 +58,7 @@ func checkRecovery() throws {
     XCTAssertTrue(RunCheckpoint.promisesWork("I will re-execute the search for WordPress jobs."))
     XCTAssertFalse(RunCheckpoint.promisesWork("I inspected the page and found the results."))
     let focusedTools = RunCheckpoint.recoveryTools(task: "Find ten jobs", provider: .local, corrections: 1)
-    XCTAssertEqual(Set(focusedTools.map(\.name)), Set(["search", "context", "browser_open", "browser_read", "files_read"]))
+    XCTAssertEqual(Set(focusedTools.map(\.name)), Set(["search", "context", "memory_search", "memory_read", "browser_open", "browser_read", "files_read"]))
     XCTAssertEqual(RunCheckpoint.recoveryTools(task: "Find ten jobs", provider: .local, corrections: 0).count, ToolDefinition.all.count)
     XCTAssertEqual(RunCheckpoint.recoveryTools(task: "Write a report", provider: .local, corrections: 1).count, ToolDefinition.all.count)
     XCTAssertEqual(RunCheckpoint.recoveryTools(task: "Find ten jobs", provider: .claude, corrections: 1).count, ToolDefinition.all.count)

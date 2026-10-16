@@ -76,7 +76,7 @@ public final class VirtualMachine {
     }
     public func perform(name: String, tool: String, arguments: JSON) async throws -> JSON {
         try validate(name)
-        guard ToolDefinition.all.contains(where: { $0.name == tool && !["remember", "context", "bots"].contains(tool) }) || tool == "health" || tool == "export" else { throw ShiroError("Unknown VM tool: \(tool)") }
+        guard ToolDefinition.all.contains(where: { $0.name == tool && !["remember", "context", "bots", "memory_search", "memory_read"].contains(tool) }) || tool == "health" || tool == "export" else { throw ShiroError("Unknown VM tool: \(tool)") }
         let payload = try JSON.object(["tool": .string(tool), "arguments": arguments]).data().base64EncodedString()
         let stdout = try await ProcessRunner.checked(cli(), ["shell", name, "--", "sudo", "-u", "shiro-local", "env", "HOME=/home/shiro-local", "DISPLAY=:88", "XAUTHORITY=/home/shiro-local/.Xauthority", "python3", "/opt/shiro-local/guest.py", payload], timeout: 65)
         return try JSON.parse(stdout.trimmingCharacters(in: .whitespacesAndNewlines))

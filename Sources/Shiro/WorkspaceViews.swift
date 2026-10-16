@@ -11,17 +11,57 @@ struct PageHeading: View {
 
 struct MemoryView: View {
     @EnvironmentObject var store: AppStore
+    @State private var query = ""
+    @State private var results: JSON = .null
+    @State private var searching = false
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
-            PageHeading(eyebrow: "A little continuity", title: "What Shiro remembers.", subtitle: "Your preferences, decisions, and notes for the next conversation. Edit or remove anything.")
+            PageHeading(eyebrow: "A little continuity", title: "What Shiro remembers.", subtitle: "Shared facts for every bot, a checkpoint for each session, and searchable originals on this Mac.")
             Card {
                 VStack(alignment: .leading, spacing: 15) {
-                    HStack { Eyebrow(text: "Saved notes"); Spacer(); Text("Saved automatically").font(.system(size: 10)).foregroundStyle(Palette.muted) }
+                    HStack { Eyebrow(text: "Shared facts · every bot"); Spacer(); Text("Saved automatically").font(.system(size: 10)).foregroundStyle(Palette.muted) }
                     TextEditor(text: $store.state.memory).font(.system(size: 13)).scrollContentBackground(.hidden).frame(maxHeight: .infinity).accessibilityLabel("Shiro's editable memory")
                 }
             }
-            HStack { Image(systemName: "lock").foregroundStyle(Palette.mint); Text("Stored on this Mac. Notes are included in model requests; keep API keys in Connections.").font(.system(size: 11)).foregroundStyle(Palette.muted); Spacer() }
+            Card {
+                VStack(alignment: .leading, spacing: 10) {
+                    Toggle("Automatic context compaction and retry", isOn: $store.state.memoryPolicy.autoCompact)
+                    Toggle("Search saved chats and selected text attachments across bots", isOn: $store.state.memoryPolicy.shareHistory)
+                    Stepper("Local context budget: \(store.state.memoryPolicy.contextTokens) estimated tokens", value: $store.state.memoryPolicy.localContextTokens, in: 4096...32768, step: 1024)
+                    Text("Match your runtime's supported context. The budget includes instructions, tools, memory, conversation and an output reserve. Token counts are conservative estimates. Originals stay saved when active context is compacted.").font(.system(size: 10)).foregroundStyle(Palette.muted)
+                    if let session = store.conversation.session {
+                        DisclosureGroup("Active session · \(session.phase) · \(session.compactions) compactions") { Text(session.context).font(.system(size: 11)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
+                    }
+                }.font(.system(size: 12)).disabled(store.running)
+            }
+            Card {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        TextField("Search company, CV facts, decisions…", text: $query).textFieldStyle(.roundedBorder).onSubmit { search() }
+                        Button(searching ? "Searching…" : "Search memory") { search() }.disabled(searching || query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                    if results != .null {
+                        Text(results["mode"].string ?? results["error"].string ?? "").font(.system(size: 10)).foregroundStyle(Palette.muted)
+                        ScrollView { VStack(alignment: .leading, spacing: 8) {
+                            ForEach(Array(results["matches"].array.enumerated()), id: \.offset) { _, hit in
+                                DisclosureGroup(hit["source"].string ?? "Saved source") { Text(hit["text"].string ?? "").font(.system(size: 11)).textSelection(.enabled) }
+                            }
+                        } }.frame(maxHeight: 140)
+                    }
+                    Button("Clear derived search cache") { Task { do { try await store.memoryIndex.clear(); results = .null } catch { store.error = error.localizedDescription } } }.font(.system(size: 10))
+                }
+            }
+            HStack { Image(systemName: "lock").foregroundStyle(Palette.mint); Text("Search uses on-device English embeddings plus keywords, with keyword fallback. Relevant excerpts go to your selected model; local mode stays local. Shared facts are editable above; bot notes live in each bot's settings. Delete chats to remove their source records. Keep secrets in Connections.").font(.system(size: 10)).foregroundStyle(Palette.muted); Spacer() }
         }.padding(32)
+    }
+    private func search() {
+        guard !searching, !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        searching = true
+        Task {
+            do { results = try await store.memoryIndex.search(state: store.state, botID: store.bot.id, chatID: store.selectedID, query: query) }
+            catch { results = .object(["error": .string(error.localizedDescription)]) }
+            searching = false
+        }
     }
 }
 

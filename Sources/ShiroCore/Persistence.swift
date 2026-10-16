@@ -27,7 +27,8 @@ public final class StateStore {
     public let directory: URL
     public var url: URL { directory.appendingPathComponent("state.json") }
     public init(directory: URL? = nil) {
-        self.directory = directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("ShiroLocal")
+        let profile = ProcessInfo.processInfo.environment["SHIRO_PROFILE_DIRECTORY"].flatMap { $0.hasPrefix("/") ? URL(fileURLWithPath: $0) : nil }
+        self.directory = directory ?? profile ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("ShiroLocal")
     }
     public func load() throws -> SavedState {
         guard FileManager.default.fileExists(atPath: url.path) else { return SavedState() }

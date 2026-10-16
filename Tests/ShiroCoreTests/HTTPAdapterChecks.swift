@@ -29,7 +29,16 @@ func checkHTTPAdapters() async throws {
     ]
     for (provider, fixture, path) in fixtures {
         FixtureProtocol.response = try JSON.parse(fixture)
-        let result = try await client.complete(config: .init(provider: provider, model: "test-model"), key: provider == .local ? "" : "fake-test-key", system: "Test harness", history: [ProviderClient.user("Hello", provider: provider)])
+        let result = try await client.complete(config: .init(provider: provider, model: "test-model"), key: provider == .local ? "" : "fake-test-key", system: "Test harness", history: [ProviderClient.user("Hello", provider: provider)], maxOutputTokens: 512)
+        let sentRequest = FixtureProtocol.lastRequest!
+        let sentData = sentRequest.httpBody ?? sentRequest.httpBodyStream.map { stream -> Data in
+            stream.open(); defer { stream.close() }
+            var data = Data(), bytes = [UInt8](repeating: 0, count: 4096)
+            while stream.hasBytesAvailable { let count = stream.read(&bytes, maxLength: bytes.count); if count <= 0 { break }; data.append(contentsOf: bytes.prefix(count)) }
+            return data
+        } ?? Data()
+        let sent = try JSON.parse(sentData)
+        XCTAssertEqual(provider == .gemini ? sent["generationConfig"]["maxOutputTokens"] : sent[provider == .openAI ? "max_output_tokens" : "max_tokens"], .number(512))
         XCTAssertEqual(result.text, "ok")
         XCTAssertEqual(FixtureProtocol.lastRequest?.url?.path, path)
         XCTAssertEqual(FixtureProtocol.lastRequest?.httpMethod, "POST")

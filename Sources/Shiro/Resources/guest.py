@@ -298,6 +298,28 @@ def shell(args):
                 "output": data[:MAX_TEXT].decode(errors="replace"), "truncated": len(data) > MAX_TEXT}
 
 
+def document_text(path):
+    if path.suffix.lower() == ".pdf":
+        if not path.read_bytes().startswith(b"%PDF-"):
+            raise ValueError("Invalid PDF header")
+        extraction = subprocess.run(["pdftotext", "-layout", str(path), "-"], capture_output=True, timeout=15, check=True)
+        text = extraction.stdout.decode("utf-8", errors="replace")
+    elif path.suffix.lower() == ".docx":
+        import zipfile
+        import xml.etree.ElementTree as ET
+        with zipfile.ZipFile(path) as doc:
+            info = doc.getinfo("word/document.xml")
+            if info.file_size > 4 * 1024 * 1024:
+                raise ValueError("DOCX text exceeds verification limit")
+            root = ET.fromstring(doc.read(info))
+            text = "\n".join(e.text for e in root.iter() if e.tag.endswith("}t") and e.text)
+    else:
+        if path.stat().st_size > 1024 * 1024:
+            raise ValueError("Text verification requires a file below 1 MB")
+        text = path.read_text(encoding="utf-8")
+    return text
+
+
 def files(args):
     action = required(args, "action")
     if action == "mkdir":
@@ -312,13 +334,24 @@ def files(args):
                            "bytes": p.stat().st_size} for p in sorted(path.iterdir())[:150] if not p.is_symlink()]}
     if action == "stat":
         return {"file": path.is_file(), "path": str(path.relative_to(WORKSPACE.resolve())), "bytes": path.stat().st_size}
+    if action == "verify":
+        if not path.is_file() or path.stat().st_size > 32 * 1024 * 1024:
+            raise ValueError("Verification requires a regular file below 32 MB")
+        import hashlib
+        text = document_text(path)
+        if not text.strip():
+            raise ValueError("Saved artifact has no readable text")
+        return {"path": str(path.relative_to(WORKSPACE.resolve())), "bytes": path.stat().st_size,
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "text": text[:12000],
+                "totalCharacters": len(text), "truncated": len(text) > 12000}
     if action == "read":
-        if path.stat().st_size > 1024 * 1024:
-            raise ValueError("File exceeds the 1 MB text limit. Export it instead.")
+        maximum = 32 * 1024 * 1024 if path.suffix.lower() in [".pdf", ".docx"] else 1024 * 1024
+        if path.stat().st_size > maximum:
+            raise ValueError("File exceeds the document read limit. Export it instead.")
         offset = args.get("offset", 0)
         if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
             raise ValueError("offset must be a nonnegative integer; use nextOffset from the previous read")
-        text = path.read_text()
+        text = document_text(path)
         content = text[offset:offset+6000]
         return {"path": str(path.relative_to(WORKSPACE.resolve())), "content": content, "offset": offset,
                 "nextOffset": offset+len(content) if offset+len(content)<len(text) else None, "totalCharacters": len(text)}

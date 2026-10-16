@@ -39,7 +39,7 @@ public enum RunCheckpoint {
     public static func recoveryTools(task: String, provider: Provider, corrections: Int) -> [ToolDefinition] {
         guard provider == .local, corrections > 0, TaskCompletion.requestedJobCount(task) != nil else { return ToolDefinition.all }
         // Reduce choices for a stalled small model until one real observation succeeds.
-        return ToolDefinition.all.filter { ["search", "context"].contains($0.name) }
+        return ToolDefinition.all.filter { ["search", "context", "memory_search", "memory_read"].contains($0.name) }
             + ToolDefinition.localBrowser.filter { ["browser_open", "browser_read"].contains($0.name) }
             + [ToolDefinition.localFileRead]
     }
@@ -49,14 +49,22 @@ public enum RunTask {
     public static func isFollowUp(_ message: String) -> Bool {
         let first = message.components(separatedBy: "\nAttached files in your VM")[0]
         let value = first.lowercased().trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
-        return ["", "continue", "go on", "resume", "keep going", "keep working", "do it", "finish it", "find the job", "find the jobs", "find jobs", "find me jobs"].contains(value)
+        return ["", "continue", "go on", "resume", "keep going", "keep working", "do it", "finish it", "find the job", "find the jobs", "find jobs", "find me jobs", "hello", "hi", "hey"].contains(value)
     }
     public static func objective(latest: String, chat: Conversation) -> String {
+        let priorRequests = chat.entries.filter { $0.role == "user" && $0.text != latest }
+        // A pasted list of job leads or an attachment is input to the pending CV task,
+        // not a replacement objective. Explicit new requests still replace it.
+        let isInput = latest.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("*") || latest.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("•") || latest.lowercased().hasPrefix("here is my cv")
+        if isInput, chat.lastRunOutcome != "completed", let prior = priorRequests.reversed().first(where: { TaskContract($0.text).createsCV }) { return prior.text }
         guard isFollowUp(latest) else { return latest }
         if let goal = chat.activeObjective, !goal.isEmpty { return goal }
         guard chat.lastRunOutcome != "completed" else { return latest }
         // Recover the original request in pre-upgrade chats, without pinning short nudges as new tasks.
-        return chat.entries.reversed().first { $0.role == "user" && !isFollowUp($0.text) }?.text ?? latest
+        return chat.entries.reversed().first {
+            let text = $0.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return $0.role == "user" && !isFollowUp(text) && !text.hasPrefix("*") && !text.hasPrefix("•")
+        }?.text ?? latest
     }
     public static func prompt(latest: String, objective: String) -> String {
         guard latest != objective else { return latest }

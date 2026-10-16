@@ -85,6 +85,36 @@ class FileBoundaryTests(unittest.TestCase):
         inside = str(guest.WORKSPACE / "report/notes.md")
         self.assertEqual(guest.files({"action": "read", "path": inside})["content"], "Shiro 日本語")
 
+    def test_read_back_verification_and_tamper_detection(self):
+        guest.files({"action": "write", "path": "cv.md", "content": "Actual CV 日本語"})
+        first = guest.files({"action": "verify", "path": "cv.md"})
+        self.assertEqual(first["text"], "Actual CV 日本語")
+        self.assertEqual(len(first["sha256"]), 64)
+        guest.files({"action": "write", "path": "cv.md", "content": "Changed"})
+        self.assertNotEqual(guest.files({"action": "verify", "path": "cv.md"})["sha256"], first["sha256"])
+        guest.files({"action": "write", "path": "bad.pdf", "content": "Not a PDF"})
+        with self.assertRaises(ValueError):
+            guest.files({"action": "verify", "path": "bad.pdf"})
+        guest.files({"action": "write", "path": "empty.md", "content": " "})
+        with self.assertRaises(ValueError):
+            guest.files({"action": "verify", "path": "empty.md"})
+        with self.assertRaises(ValueError):
+            guest.files({"action": "verify", "path": "../secret"})
+
+    def test_pdf_reads_use_extracted_text(self):
+        path = guest.WORKSPACE / "cv.pdf"
+        path.write_bytes(b"%PDF- binary\x93")
+        with patch.object(guest.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, stdout=b"Readable candidate facts", stderr=b"")):
+            self.assertEqual(guest.files({"action": "read", "path": "cv.pdf"})["content"], "Readable candidate facts")
+            self.assertEqual(guest.files({"action": "verify", "path": "cv.pdf"})["text"], "Readable candidate facts")
+
+    def test_docx_read_back(self):
+        import zipfile
+        path = guest.WORKSPACE / "cv.docx"
+        with zipfile.ZipFile(path, "w") as doc:
+            doc.writestr("word/document.xml", '<w:document xmlns:w="word"><w:t>Candidate facts</w:t></w:document>')
+        self.assertEqual(guest.files({"action": "verify", "path": "cv.docx"})["text"], "Candidate facts")
+
     def test_file_metadata_and_direct_input(self):
         guest.files({"action": "write", "path": "output.pdf", "content": "pdf test"})
         self.assertTrue(guest.files({"action": "stat", "path": "output.pdf"})["file"])
@@ -114,7 +144,7 @@ def smoke(vm):
 
     health = call("health", {})
     assert health["desktop"] is True, health
-    shell = call("shell", {"command": "whoami; uname -m; test ! -e /Users/aaditya"})
+    shell = call("shell", {"command": "whoami; uname -m; test ! -e /Users"})
     assert shell["exitCode"] == 0 and "shiro-local" in shell["output"], shell
     text = "# Shiro verification\n\nLocal VM tools work.\n"
     call("files", {"action": "write", "path": "shiro-verification.md", "content": text})

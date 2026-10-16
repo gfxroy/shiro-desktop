@@ -43,6 +43,7 @@ public struct Conversation: Codable, Identifiable {
     public var inFlightAction: String?
     public var activeObjective: String?
     public var lastRunOutcome: String?
+    public var session: SessionMemory?
     public init() {}
 }
 
@@ -71,8 +72,9 @@ public struct SavedState: Codable {
     public var bots: [Bot] = []
     public var projects: [Project] = []
     public var selectedChatID: UUID?
+    public var memoryPolicy = MemoryPolicy()
     public init() { WorkspaceMigration.apply(&self) }
-    enum CodingKeys: String, CodingKey { case conversations, configs, provider, memory, routines, vmName, askBeforeActions, maxSteps, bots, projects, selectedChatID }
+    enum CodingKeys: String, CodingKey { case conversations, configs, provider, memory, routines, vmName, askBeforeActions, maxSteps, bots, projects, selectedChatID, memoryPolicy }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         conversations = try c.decode([Conversation].self, forKey: .conversations)
@@ -86,6 +88,7 @@ public struct SavedState: Codable {
         bots = try c.decodeIfPresent([Bot].self, forKey: .bots) ?? []
         projects = try c.decodeIfPresent([Project].self, forKey: .projects) ?? []
         selectedChatID = try c.decodeIfPresent(UUID.self, forKey: .selectedChatID)
+        memoryPolicy = try c.decodeIfPresent(MemoryPolicy.self, forKey: .memoryPolicy) ?? MemoryPolicy()
         WorkspaceMigration.apply(&self)
     }
 }

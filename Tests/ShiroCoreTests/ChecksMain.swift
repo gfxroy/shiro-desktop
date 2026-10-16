@@ -53,7 +53,8 @@ func XCTAssertThrowsError<T>(_ value: @autoclosure () throws -> T) { do { _ = tr
         do { try checkModelAssets() } catch { XCTFail(error.localizedDescription) }
         do { try checkRecovery(); try await checkProjectSync() } catch { XCTFail(error.localizedDescription) }
         do { try await checkDiagnosticsAndRepair() } catch { XCTFail(error.localizedDescription) }
+        do { try await checkMemoryHarness() } catch { XCTFail(error.localizedDescription) }
         if !failures.isEmpty { for failure in failures { print("FAIL: \(failure)") }; exit(1) }
-        print("22 check groups passed.")
+        print("23 check groups passed.")
     }
 }

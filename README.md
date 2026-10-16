@@ -1,10 +1,12 @@
-# Shiro 0.2.0
+# Shiro 0.3.0
 
 A personal AI workspace with local models, custom bots, and a Linux computer for tools.
 
 ## Downloads
 
 Use the release assets for the native Mac app or the Windows/Linux portable previews. Windows/Linux binaries are unverified previews until tested on those operating systems. The portable Docker computer is experimental and has not been validated end to end.
+
+Native Mac 0.3.0 adds shared semantic memory, session checkpoints, bounded context recovery and independent artifact review. See [memory and harness](docs/MEMORY-HARNESS.md) for behavior, privacy and limitations.
 
 ## Build native Mac
 

@@ -43,7 +43,10 @@ public enum ContextBudget {
         if let result = payload.flatMap({ try? JSON.parse($0) }) ?? response, !result.object.isEmpty {
             // Put current state before large page text, IDs, links and schemas.
             var parts: [String] = []
-            for key in ["ok", "error", "url", "title", "saved", "path", "available_attachments", "exitCode", "recovery"] where result[key] != .null { parts.append(key + ": " + clipped(result[key].text, limit: 650)) }
+            for key in ["ok", "error", "source_id", "source", "kind", "available_sources", "hint", "url", "title", "saved", "path", "available_attachments", "exitCode", "recovery"] where result[key] != .null { parts.append(key + ": " + clipped(result[key].text, limit: 650)) }
+            if !result["matches"].array.isEmpty {
+                parts.append("Memory matches (exact IDs; use memory_read for originals): " + JSON.array(result["matches"].array.prefix(4).map { .object(["source_id": $0["source_id"], "source": $0["source"], "kind": $0["kind"], "text": .string(String(($0["text"].string ?? "").prefix(500)))]) }).stableText)
+            }
             if !result["fields"].array.isEmpty {
                 let inputs = result["fields"].array.filter { ["INPUT", "TEXTAREA", "SELECT"].contains($0["tag"].string ?? "") }.prefix(8)
                 parts.append("Observed inputs: " + JSON.array(inputs.map { .object(["selector": $0["selector"], "value": $0["value"], "placeholder": $0["placeholder"], "type": $0["type"]]) }).stableText)
@@ -61,6 +64,14 @@ public enum ContextBudget {
         guard text.count > limit else { return text }
         let tail = min(800, limit / 4)
         return String(text.prefix(max(0, limit - tail - 100))) + "\n[Omitted to fit context; read the source/file again if needed.]\n" + text.suffix(tail)
+    }
+    public static func recover(_ history: [JSON], task: String, provider: Provider, allowance: Int) -> [JSON] {
+        let current = size(history)
+        if current < 1800 {
+            // The objective and action ledger are also pinned outside history.
+            return [ProviderClient.user(clipped(task, limit: max(200, min(600, current / 3))), provider: provider)]
+        }
+        return compact(history, task: task, provider: provider, limit: max(800, min(allowance / 2, current / 2)))
     }
     // Reset native transactions as a whole. Never leave orphan tool-call IDs.
     // This is a bounded transcript, not a model-generated factual summary.
@@ -96,6 +107,18 @@ public enum ContextBudget {
 }
 
 public enum ToolRecovery {
+    public static func resolvedFailures(_ failures: [String: String], after call: ToolCall) -> [String: String] {
+        let key = failureKey(call)
+        let base = call.name + ":" + (call.arguments["action"].string ?? "")
+        return failures.filter { entry in
+            if entry.value.contains("denied") { return true }
+            if entry.key == key || entry.key == base { return false }
+            // A failed guessed filename is an unsuccessful observation, not a pending
+            // write. Actual read-back resolves it; failed side effects remain tracked.
+            if call.name == "files", ["read", "verify"].contains(call.arguments["action"].string ?? ""), entry.key.hasPrefix("files:read:") { return false }
+            return true
+        }
+    }
     public static func failureKey(_ call: ToolCall) -> String {
         let base = call.name + ":" + (call.arguments["action"].string ?? "")
         guard call.name == "files", let path = call.arguments["path"].string, !path.isEmpty else { return base }
@@ -110,7 +133,7 @@ public enum ToolRecovery {
         }
         let action = call.arguments["action"].string ?? ""
         let conditional: [String]
-        if call.name == "files" { conditional = ["write", "pdf"].contains(action) ? ["path", "content"] : ["read", "mkdir", "stat"].contains(action) ? ["path"] : [] }
+        if call.name == "files" { conditional = ["write", "pdf"].contains(action) ? ["path", "content"] : ["read", "mkdir", "stat", "verify"].contains(action) ? ["path"] : [] }
         else if call.name == "browser" { conditional = action == "navigate" ? ["url"] : action == "fill" ? ["selector", "text"] : action == "click" ? ["selector"] : action == "key" ? ["text"] : [] }
         else { conditional = [] }
         for field in conditional where arguments[field] == nil { throw ShiroError("Missing required field '\(field)' for \(call.name) \(action).") }
@@ -129,7 +152,7 @@ public enum ToolRecovery {
     }
     public static func feedback(_ call: ToolCall, result: JSON) -> JSON {
         var fields = result.object
-        fields["execution_target"] = .string(call.name == "remember" ? "Shiro memory" : call.name == "context" ? "This bot's local chat archive" : "Tools in the real local Linux VM")
+        fields["execution_target"] = .string(["remember", "memory_search", "memory_read"].contains(call.name) ? "Shiro local memory" : call.name == "context" ? "This bot's local chat archive" : "Tools in the real local Linux VM")
         if let text = fields["text"]?.string { fields["text"] = .string(ContextBudget.clipped(text, limit: 4500)) }
         if let text = fields["content"]?.string { fields["content"] = .string(ContextBudget.clipped(text, limit: 6000)) }
         if let text = fields["output"]?.string { fields["output"] = .string(ContextBudget.clipped(text, limit: 6000)) }
@@ -142,7 +165,9 @@ public enum ToolRecovery {
             if call.name == "browser" { guidance += " Call browser read first; use the exact observed unique CSS selector or updated page text. Zero matches means the selector/phrase is stale. Multiple matches need a more specific selector. Do not invent a missing element." }
             fields["recovery"] = .string(guidance)
             if let tool = ToolDefinition.all.first(where: { $0.name == call.name }) { fields["expected_schema"] = tool.parameters }
-            fields["attempted_arguments"] = call.arguments
+            fields["attempted_arguments"] = .object(call.arguments.object.mapValues { value in
+                value.string.map { .string(ContextBudget.clipped($0, limit: 160)) } ?? value
+            })
         }
         return .object(fields)
     }
