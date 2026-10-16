@@ -65,6 +65,8 @@ public struct SavedState: Codable {
     public var configs: [ProviderConfig] = Provider.allCases.map { ProviderConfig(provider: $0) }
     public var provider: Provider = .local
     public var memory = ""
+    public var userProfileSource: String?
+    public var userProfileDate: Date?
     public var routines: [Routine] = []
     public var vmName = "shiro-local"
     public var askBeforeActions = true
@@ -74,13 +76,15 @@ public struct SavedState: Codable {
     public var selectedChatID: UUID?
     public var memoryPolicy = MemoryPolicy()
     public init() { WorkspaceMigration.apply(&self) }
-    enum CodingKeys: String, CodingKey { case conversations, configs, provider, memory, routines, vmName, askBeforeActions, maxSteps, bots, projects, selectedChatID, memoryPolicy }
+    enum CodingKeys: String, CodingKey { case conversations, configs, provider, memory, routines, vmName, askBeforeActions, maxSteps, bots, projects, selectedChatID, memoryPolicy, userProfileSource, userProfileDate }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         conversations = try c.decode([Conversation].self, forKey: .conversations)
         configs = try c.decode([ProviderConfig].self, forKey: .configs)
         provider = try c.decode(Provider.self, forKey: .provider)
         memory = try c.decode(String.self, forKey: .memory)
+        userProfileSource = try c.decodeIfPresent(String.self, forKey: .userProfileSource)
+        userProfileDate = try c.decodeIfPresent(Date.self, forKey: .userProfileDate)
         routines = try c.decode([Routine].self, forKey: .routines)
         vmName = try c.decode(String.self, forKey: .vmName)
         askBeforeActions = try c.decode(Bool.self, forKey: .askBeforeActions)

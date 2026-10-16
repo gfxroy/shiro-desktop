@@ -373,6 +373,23 @@ def files(args):
             blocks.extend([Paragraph(escape(clean).replace('\n', '<br/>'), styles['Heading1'] if heading else styles['BodyText']), Spacer(1, 12)])
         SimpleDocTemplate(str(path), leftMargin=48, rightMargin=48, topMargin=48, bottomMargin=48).build(blocks)
         return {"saved": str(path.relative_to(WORKSPACE.resolve())), "bytes": path.stat().st_size, "format": "PDF"}
+    if action == "docx":
+        from docx import Document
+        content = required(args, "content")
+        if path.suffix.lower() != ".docx" or len(content) > 200000:
+            raise ValueError("DOCX requires a .docx path and text below 200,000 characters")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        document = Document()
+        for block in content.split('\n\n'):
+            if block.startswith('#'):
+                lines = block.split('\n', 1)
+                document.add_heading(lines[0].lstrip('# ').strip(), level=1)
+                if len(lines) > 1:
+                    document.add_paragraph(lines[1])
+            else:
+                document.add_paragraph(block)
+        document.save(path)
+        return {"saved": str(path.relative_to(WORKSPACE.resolve())), "bytes": path.stat().st_size, "format": "DOCX"}
     if action == "write":
         content = args.get("content")
         if not isinstance(content, str) or len(content.encode()) > 1024 * 1024:

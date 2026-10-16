@@ -21,15 +21,15 @@ public struct TaskContract {
     }
     public func tools(provider: Provider, corrections: Int) -> [ToolDefinition] {
         let offered = RunCheckpoint.recoveryTools(task: objective, provider: provider, corrections: corrections)
-        // CV work uses semantic file/browser operations; unrelated desktop and bot controls
-        // cost scarce context and distract small models. Explicit tool requests keep them.
-        guard createsCV, objective.range(of: #"\b(?:shell|terminal|computer|delegate|bots)\b"#, options: [.regularExpression, .caseInsensitive]) == nil else { return offered }
-        let scoped = offered.filter { !["shell", "computer", "bots"].contains($0.name) }
-        guard provider == .local, corrections == 0 else { return scoped }
-        return scoped.filter { !["context", "browser"].contains($0.name) } + ToolDefinition.localBrowser.filter { ["browser_open", "browser_read"].contains($0.name) }
+        guard createsCV else { return offered.filter { $0.name != "cv_create" && $0.name != "memory_facts" } }
+        // CV output is constructed by the host from exact source facts. Free-form file
+        // writers/shells cannot silently bypass that proof requirement.
+        let scoped = ToolDefinition.all.filter { ["memory_search", "memory_read", "memory_facts", "cv_create", "remember", "search"].contains($0.name) }
+        return scoped + ToolDefinition.localBrowser.filter { ["browser_open", "browser_read"].contains($0.name) } + ToolDefinition.localFiles.filter { ["files_read", "files_list", "files_verify"].contains($0.name) }
     }
+
     public var instruction: String {
-        "Coordinator contract: \(plan.joined(separator: "; ")). \(createsArtifact ? "Completion requires actual verified deliverable files, not a summary about making them. Required minimum: \(minimumFiles)." : "A plan or progress promise is not a result.")"
+        "Coordinator contract: \(plan.joined(separator: "; ")). \(createsArtifact ? "Completion requires actual verified deliverable files, not a summary about making them. CVs must use memory_facts and cv_create with exact fact IDs; generated candidate claims are rejected. Required minimum: \(minimumFiles)." : "A plan or progress promise is not a result.")"
     }
     public func deliveredAnswer(worker: String, paths: [String]) -> String {
         guard createsArtifact, !paths.isEmpty else { return worker }
@@ -41,9 +41,9 @@ public struct TaskContract {
         let accepted = verified.filter { artifact in
             if !createsCV { return true }
             let content = artifact.text.lowercased()
-            return !artifact.path.lowercased().contains("role_summary") && !content.contains("[your name]") && !content.contains("[insert ") && content.count >= 250 && ["experience", "education", "skills", "projects"].filter(content.contains).count >= 2
+            return !artifact.path.lowercased().contains("role_summary") && !content.contains("[your name]") && !content.contains("[insert ") && ["experience", "education", "skills", "projects"].filter(content.contains).count >= 2
         }
-        guard accepted.count >= minimumFiles else { return "Completion rejected: \(accepted.count) verified deliverables match the requested artifact type; at least \(minimumFiles) required. A generic job/role summary is not a tailored CV. Recover candidate facts and specific job targets using memory_search and memory_read, create the requested file(s) with files_write/files_pdf, and let the harness read them back. If the saved material lacks a specific employer/job, clearly report that blocker instead of inventing a target. Do not claim the task is finished." }
+        guard accepted.count >= minimumFiles else { return "Completion rejected: \(accepted.count) verified deliverables match the requested artifact type; at least \(minimumFiles) required. A generic job/role summary is not a tailored CV. Recover candidate facts and specific job targets using memory_search and memory_read, create CV files with cv_create using exact memory_facts IDs (other documents can use files_write/files_pdf), and let the harness read them back. If the saved material lacks a specific employer/job, clearly report that blocker instead of inventing a target. Do not claim the task is finished." }
         return nil
     }
 }

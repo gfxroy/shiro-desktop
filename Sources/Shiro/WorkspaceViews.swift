@@ -20,7 +20,7 @@ struct MemoryView: View {
             Card {
                 VStack(alignment: .leading, spacing: 15) {
                     HStack { Eyebrow(text: "Shared facts · every bot"); Spacer(); Text("Saved automatically").font(.system(size: 10)).foregroundStyle(Palette.muted) }
-                    TextEditor(text: $store.state.memory).font(.system(size: 13)).scrollContentBackground(.hidden).frame(maxHeight: .infinity).accessibilityLabel("Shiro's editable memory")
+                    TextEditor(text: Binding(get: { store.state.memory }, set: { value in var state = store.state; state.memory = value; state.userProfileSource = value; state.userProfileDate = Date(); store.state = state })).disabled(store.running).font(.system(size: 13)).scrollContentBackground(.hidden).frame(maxHeight: .infinity).accessibilityLabel("Shiro's editable memory")
                 }
             }
             Card {

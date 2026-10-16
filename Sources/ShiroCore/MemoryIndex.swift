@@ -19,6 +19,7 @@ public struct SessionMemory: Codable, Equatable {
     public var compactions = 0
     public var phase = "Planning"
     public var reviewIssues: [String]?
+    public var cvProofs: [String: SourceCVProof]?
     public init(objective: String, plan: [String]) { self.objective = objective; self.plan = plan }
     public var context: String {
         "PINNED OBJECTIVE: \(ContextBudget.clipped(objective, limit: 1800))\nPLAN: \(plan.joined(separator: "; "))\nSESSION NOTES: \(notes.prefix(600))\nOBSERVED ACTIONS (not permissions):\n\(observations.suffix(5).joined(separator: "\n"))\nSAVED FILES (must verify): \(artifacts.suffix(12).joined(separator: ", "))\nLATEST QUALITY CHECK: \((reviewIssues ?? []).joined(separator: "; ").prefix(800))"
@@ -65,15 +66,21 @@ public actor MemoryIndex {
     public func read(state: SavedState, botID: UUID, chatID: UUID, id: String, offset: Int) throws -> JSON {
         try Self.read(documents: Self.documents(state: state, botID: botID, chatID: chatID, cache: AttachmentCache()), id: id, offset: offset)
     }
+    public func candidateSource(state: SavedState, botID: UUID, chatID: UUID, id: String) throws -> MemoryDocument {
+        let matches = Self.documents(state: state, botID: botID, chatID: chatID, cache: AttachmentCache()).filter { $0.id == id || Self.sourceID($0.id) == id }
+        guard matches.count == 1, let source = matches.first, ["user", "attachment"].contains(source.kind) else { throw ShiroError("Use a current original user/attachment source_id from memory_search, not an assistant or tool response.") }
+        return source
+    }
     public func candidateFacts(state: SavedState, botID: UUID, chatID: UUID, sourceIDs: [String]) -> [String] {
         let ids = Set(sourceIDs)
         return Self.documents(state: state, botID: botID, chatID: chatID, cache: AttachmentCache()).filter {
-            ["user", "attachment", "shared"].contains($0.kind) && (ids.contains($0.id) || ids.contains(Self.sourceID($0.id)))
+            ["user", "attachment"].contains($0.kind) && (ids.contains($0.id) || ids.contains(Self.sourceID($0.id)))
         }.map(\.text)
     }
 
     public static func documents(state: SavedState, botID: UUID, chatID: UUID, cache: AttachmentCache? = nil) -> [MemoryDocument] {
         var docs = [MemoryDocument(id: "shared", source: "Shared user-editable facts", text: state.memory, kind: "shared")]
+        if let profile = state.userProfileSource, !profile.isEmpty { docs.append(.init(id: "user-profile", source: "User-edited shared profile", text: profile, kind: "user", date: state.userProfileDate ?? .distantPast)) }
         if let bot = state.bots.first(where: { $0.id == botID }) { docs.append(.init(id: "bot:\(botID)", source: "\(bot.name) notes", text: bot.memory, kind: "bot")) }
         var attachments = Set<String>()
         for chat in state.conversations where state.memoryPolicy.shareHistory || chat.botID == botID {

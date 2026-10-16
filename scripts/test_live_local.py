@@ -9,7 +9,7 @@ p=argparse.ArgumentParser();p.add_argument('--model',required=True);p.add_argume
 root=Path(tempfile.mkdtemp(prefix='shiro-live-model-'));profile=root/'profile'
 _, chat_id=fixture_profile(profile,args.model,args.endpoint,'harness-live-synthetic')
 state=json.loads((profile/'state.json').read_text());chat=state['conversations'][0]
-request=chat['activeObjective']+' This is a synthetic integration fixture, not a real job application. The job description and candidate facts are already supplied in the other bot’s saved user message. Retrieve them. No browsing, external verification, submissions or messages are needed. Do not invent facts. Use files_pdf with path and content. Return the actual saved path when finished, or BLOCKED: with a concrete reason.'
+request=chat['activeObjective']+' This is a synthetic integration fixture, not a real job application. The job description and candidate facts are already supplied in the other bot’s saved user message. Retrieve them. No browsing, external verification, submissions or messages are needed. Do not invent facts. Use memory_facts for exact original fact IDs, then cv_create with those IDs and the original section hints. Do not supply generated candidate prose. Return the actual saved path when finished, or BLOCKED: with a concrete reason.'
 chat.update(pendingTask=request,activeObjective=request);chat['entries'][0]['text']=request
 state['configs'][0]['localRuntime']=args.runtime;chat['pendingConfig']=state['configs'][0]
 (profile/'state.json').write_text(json.dumps(state));log=open(root/'app.log','w')

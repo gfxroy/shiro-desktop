@@ -43,10 +43,11 @@ public enum ContextBudget {
         if let result = payload.flatMap({ try? JSON.parse($0) }) ?? response, !result.object.isEmpty {
             // Put current state before large page text, IDs, links and schemas.
             var parts: [String] = []
-            for key in ["ok", "error", "source_id", "source", "kind", "available_sources", "hint", "url", "title", "saved", "path", "available_attachments", "exitCode", "recovery"] where result[key] != .null { parts.append(key + ": " + clipped(result[key].text, limit: 650)) }
+            for key in ["ok", "error", "source_id", "source", "kind", "available_sources", "hint", "artifact_audit", "url", "title", "saved", "path", "available_attachments", "exitCode", "recovery"] where result[key] != .null { parts.append(key + ": " + clipped(result[key].text, limit: 650)) }
             if !result["matches"].array.isEmpty {
                 parts.append("Memory matches (exact IDs; use memory_read for originals): " + JSON.array(result["matches"].array.prefix(4).map { .object(["source_id": $0["source_id"], "source": $0["source"], "kind": $0["kind"], "text": .string(String(($0["text"].string ?? "").prefix(500)))]) }).stableText)
             }
+            if !result["facts"].array.isEmpty { parts.append("Exact source facts for cv_create: " + result["facts"].stableText) }
             if !result["fields"].array.isEmpty {
                 let inputs = result["fields"].array.filter { ["INPUT", "TEXTAREA", "SELECT"].contains($0["tag"].string ?? "") }.prefix(8)
                 parts.append("Observed inputs: " + JSON.array(inputs.map { .object(["selector": $0["selector"], "value": $0["value"], "placeholder": $0["placeholder"], "type": $0["type"]]) }).stableText)
@@ -133,7 +134,7 @@ public enum ToolRecovery {
         }
         let action = call.arguments["action"].string ?? ""
         let conditional: [String]
-        if call.name == "files" { conditional = ["write", "pdf"].contains(action) ? ["path", "content"] : ["read", "mkdir", "stat", "verify"].contains(action) ? ["path"] : [] }
+        if call.name == "files" { conditional = ["write", "pdf", "docx"].contains(action) ? ["path", "content"] : ["read", "mkdir", "stat", "verify"].contains(action) ? ["path"] : [] }
         else if call.name == "browser" { conditional = action == "navigate" ? ["url"] : action == "fill" ? ["selector", "text"] : action == "click" ? ["selector"] : action == "key" ? ["text"] : [] }
         else { conditional = [] }
         for field in conditional where arguments[field] == nil { throw ShiroError("Missing required field '\(field)' for \(call.name) \(action).") }
@@ -152,7 +153,7 @@ public enum ToolRecovery {
     }
     public static func feedback(_ call: ToolCall, result: JSON) -> JSON {
         var fields = result.object
-        fields["execution_target"] = .string(["remember", "memory_search", "memory_read"].contains(call.name) ? "Shiro local memory" : call.name == "context" ? "This bot's local chat archive" : "Tools in the real local Linux VM")
+        fields["execution_target"] = .string(["remember", "memory_search", "memory_read", "memory_facts"].contains(call.name) ? "Shiro local memory" : call.name == "context" ? "This bot's local chat archive" : "Tools in the real local Linux VM")
         if let text = fields["text"]?.string { fields["text"] = .string(ContextBudget.clipped(text, limit: 4500)) }
         if let text = fields["content"]?.string { fields["content"] = .string(ContextBudget.clipped(text, limit: 6000)) }
         if let text = fields["output"]?.string { fields["output"] = .string(ContextBudget.clipped(text, limit: 6000)) }

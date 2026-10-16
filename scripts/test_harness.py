@@ -6,6 +6,7 @@ This checks harness behavior with a deterministic model, not model intelligence.
 import argparse
 import json
 import os
+import plistlib
 from pathlib import Path
 import subprocess
 import tempfile
@@ -48,9 +49,11 @@ class Fixture(BaseHTTPRequestHandler):
         if 'independent quality reviewer' in system:
             assert not body.get('tools'), 'Reviewer must have no tools'
             assert body['max_tokens']==512
+            assert 'Requirements: Python services and model evaluation.' in body['messages'][-1]['content'], 'Reviewer lost observed job requirements'
+            assert 'prior employer' in system, 'Reviewer must distinguish prior employment from the target'
             self.server.reviews+=1
             accepted=self.server.reviews>1
-            self.reply(json.dumps(dict(accepted=accepted,issues=[] if accepted else ['Unsupported doctorate claim; source has only a BSc. Remove it.'])))
+            self.reply(json.dumps(dict(accepted=accepted,issues=[] if accepted else ['Prioritize the source-backed Python skills for this role. Keep candidate facts unchanged.'])))
             return
         self.server.worker+=1
         n=self.server.worker
@@ -64,13 +67,31 @@ class Fixture(BaseHTTPRequestHandler):
         elif n==2:
             self.tool('memory_search', {'query':'Alex Example Helio Robotics candidate skills education employer target job'})
         elif n==3:
-            self.tool('memory_read', {'source_id':self.server.source,'offset':0})
-        elif n==5:
+            self.tool('memory_facts', {'source_id':self.server.source,'offset':0})
+        elif n in ((4,5,7,9) if self.server.scenario=='multi-cv' else (4,5,8)):
+            if not hasattr(self.server,'fact_sections'):
+                for message in reversed(body['messages']):
+                    if message.get('role')!='tool':continue
+                    try:result=json.loads(message.get('content','{}'))
+                    except (ValueError,TypeError):continue
+                    if result.get('facts'):
+                        self.server.fact_sections=[{'heading':heading,'fact_ids':[f['fact_id'] for f in result['facts'] if f.get('section')==heading and not f.get('target_context')]} for heading in ['Skills','Experience','Education']]
+                        break
+            if not hasattr(self.server,'fact_sections'):
+                saved=json.loads((self.server.profile/'state.json').read_text())
+                for chat in saved['conversations']:
+                    for item in reversed(chat['entries']):
+                        if item['role']=='tool' and item['text'].startswith('memory_facts: '):
+                            result=json.loads(item['text'].split(': ',1)[1])
+                            if not result.get('facts'):continue
+                            self.server.fact_sections=[{'heading':heading,'fact_ids':[f['fact_id'] for f in result['facts'] if f.get('section')==heading and not f.get('target_context')]} for heading in ['Skills','Experience','Education']]
+                            break
+            sections=json.loads(json.dumps(self.server.fact_sections))
+            if n==4:sections[1]['fact_ids']=['invented-PhD-claim']
+            is_second=self.server.scenario=='multi-cv' and n==7
+            self.tool('cv_create',{'path':self.server.folder+('/nimbus-cv.pdf' if is_second else '/helio-cv.pdf'),'candidate_name':'Alex Example','target_role':'Applied AI Engineer','target_employer':'Nimbus Systems' if is_second else 'Helio Robotics','sections':sections})
+        elif n==6:
             self.tool('files_read', {'path':self.server.folder+'/helio-cv.pdf','offset':0})
-        elif n in (4,7):
-            text='# Alex Example\n\nApplied AI Engineer — Helio Robotics\n\n# Skills\n\nPython, SQL, model evaluation.\n\n# Experience\n\nExample Labs, 2023–2025. Built Python APIs. Relevant to Python services and model evaluation in the target role.\n\n# Education\n\nBSc Computer Science, 2022.'
-            if n==4: text+='\n\nPhD in Artificial Intelligence.'
-            self.tool('files_pdf',{'path':self.server.folder+'/helio-cv.pdf','content':text})
         else:
             self.reply('The tailored CV is ready.')
     def reply(self, text):
@@ -79,10 +100,20 @@ class Fixture(BaseHTTPRequestHandler):
         self.send({'choices':[{'message':{'role':'assistant','content':None,'tool_calls':[{'id':'call_'+str(self.server.worker),'type':'function','function':{'name':name,'arguments':json.dumps(arguments)}}]},'finish_reason':'tool_calls'}]})
 
 def run(app, scenario, root, keep=False):
+    version=plistlib.loads((app/'Contents/Info.plist').read_bytes())['CFBundleShortVersionString']
+    assert version==(ROOT/'VERSION').read_text().strip(), 'Build the current app before running this source-version integration test'
     server=ThreadingHTTPServer(('127.0.0.1',0),Fixture)
     server.scenario=scenario;server.worker=0;server.reviews=0;server.requests=[];server.folder='harness-fixture-'+uuid.uuid4().hex[:10]
     profile=root/scenario
     server.source, chat_id=fixture_profile(profile,scenario,'http://127.0.0.1:'+str(server.server_port)+'/v1',server.folder)
+    server.profile=profile
+    if scenario=='multi-cv':
+        saved=json.loads((profile/'state.json').read_text())
+        chat=saved['conversations'][0]
+        request=f'Make 2 separate tailored CVs, one for each job: Applied AI Engineer at Helio Robotics and at Nimbus Systems. Save them as {server.folder}/helio-cv.pdf and {server.folder}/nimbus-cv.pdf. Use only supplied candidate facts.'
+        chat.update(pendingTask=request,activeObjective=request);chat['entries'][0]['text']=request
+        saved['conversations'][1]['entries'][0]['text']+=' Target employer: Nimbus Systems. Target role: Applied AI Engineer.'
+        (profile/'state.json').write_text(json.dumps(saved))
     threading.Thread(target=server.serve_forever,daemon=True).start()
     env=dict(os.environ, SHIRO_PROFILE_DIRECTORY=str(profile))
     log=open(root/(scenario+'.log'),'w')
@@ -104,9 +135,14 @@ def run(app, scenario, root, keep=False):
             assert not chat['session']['artifacts']
         else:
             assert chat['lastRunOutcome']=='completed', str([(e['role'],e['text'][:350]) for e in chat['entries'][-4:]])
-            assert server.reviews==2 and server.worker==8
+            assert (server.reviews,server.worker)==((3,10) if scenario=='multi-cv' else (2,9)), (server.reviews,server.worker)
+            if scenario=='multi-cv':
+                assert len(chat['session']['cvProofs'])==2
+                assert len(chat['session']['artifacts'])==2
             assert chat['session']['compactions']>=2
             assert chat['session']['phase']=='Completed'
+            assert chat['session']['cvProofs'], 'Completed CV needs source proof and read-back hash'
+            assert any('Unknown or target-only fact_id' in e['text'] for e in chat['entries']), 'Invented fact must be rejected before file writing'
             assert any('Independent review passed' in e['text'] for e in chat['entries'])
             assert any(e.get('attachments') for e in chat['entries']), 'Verified output must be openable in chat'
             workers=[r for r in server.requests if r.get('tools')]
@@ -122,7 +158,7 @@ def run(app, scenario, root, keep=False):
         server.shutdown();log.close()
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('--app',type=Path,default=ROOT/'dist/Shiro.app');parser.add_argument('--output',type=Path);parser.add_argument('--scenario',choices=['summary-failure','recovery-success','both'],default='both');parser.add_argument('--keep-open',action='store_true');args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('--app',type=Path,default=ROOT/'dist/Shiro.app');parser.add_argument('--output',type=Path);parser.add_argument('--scenario',choices=['summary-failure','recovery-success','multi-cv','both'],default='both');parser.add_argument('--keep-open',action='store_true');args=parser.parse_args()
     root=Path(tempfile.mkdtemp(prefix='shiro-harness-'))
     scenarios=['summary-failure','recovery-success'] if args.scenario=='both' else [args.scenario]
     reports=[run(args.app,s,root,args.keep_open and s==scenarios[-1]) for s in scenarios]
